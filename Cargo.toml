@@ -1,0 +1,15 @@
+[package]
+name = "mixin"
+version = "0.0.0"
+authors = ["Denis Kolodin <deniskolodin@gmail.com>"]
+edition = "2018"
+repository = "https://github.com/DenisKolodin/mixin"
+homepage = "https://github.com/DenisKolodin/mixin"
+documentation = "https://docs.rs/mixin/"
+license = "MIT/Apache-2.0"
+readme = "README.md"
+keywords = ["macros", "struct", "field"]
+categories = ["development-tools"]
+description = "mixin macros"
+
+[dependencies]
