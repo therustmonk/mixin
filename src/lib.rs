@@ -30,12 +30,12 @@ impl Error {
 }
 
 #[proc_macro_attribute]
-pub fn mixin(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn insert(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args as AttributeArgs);
-    mixin_impl(args, input).unwrap_or_else(Error::to_compile_error)
+    insert_impl(args, input).unwrap_or_else(Error::to_compile_error)
 }
 
-fn mixin_impl(args: AttributeArgs, input: TokenStream) -> Result<TokenStream, Error> {
+fn insert_impl(args: AttributeArgs, input: TokenStream) -> Result<TokenStream, Error> {
     let mut the_struct: DeriveInput = syn::parse(input)?;
     let the_struct_name = the_struct.ident.to_string();
 
@@ -104,11 +104,15 @@ impl Mixin {
 static GLOBAL_DATA: Lazy<Mutex<HashMap<String, Mixin>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[proc_macro_attribute]
-pub fn mixin_declare(_attribute: TokenStream, input: TokenStream) -> TokenStream {
-    mixin_declare_impl(input).unwrap_or_else(Error::to_compile_error)
+pub fn declare(_attribute: TokenStream, input: TokenStream) -> TokenStream {
+    declare_impl(input).unwrap_or_else(Error::to_compile_error)
 }
 
-fn mixin_declare_impl(input: TokenStream) -> Result<TokenStream, Error> {
+fn declare_impl(input: TokenStream) -> Result<TokenStream, Error> {
+    // Keep it just to let the compiler check it
+    let mut output: TokenStream = "#[allow(dead_code)]".parse()?;
+    output.extend(input.clone().into_iter());
+
     // Consume the struct
     let mixin = Mixin::from(&input);
     let input: DeriveInput = syn::parse(input).unwrap();
@@ -116,15 +120,19 @@ fn mixin_declare_impl(input: TokenStream) -> Result<TokenStream, Error> {
     let mut data = GLOBAL_DATA.lock().map_err(|_| Error::GlobalUnavailable)?;
     data.insert(name, mixin);
     // And give the empty output back
-    Ok(TokenStream::new())
+    Ok(output)
 }
 
 #[proc_macro_attribute]
-pub fn mixin_expand(_attribute: TokenStream, input: TokenStream) -> TokenStream {
-    mixin_expand_impl(input).unwrap_or_else(Error::to_compile_error)
+pub fn expand(_attribute: TokenStream, input: TokenStream) -> TokenStream {
+    expand_impl(input).unwrap_or_else(Error::to_compile_error)
 }
 
-fn mixin_expand_impl(input: TokenStream) -> Result<TokenStream, Error> {
+fn expand_impl(input: TokenStream) -> Result<TokenStream, Error> {
+    // Keep it just to let the compiler check it
+    let mut output: TokenStream = "#[allow(dead_code)]".parse()?;
+    output.extend(input.clone().into_iter());
+
     let code = input.to_string();
     let ident = input.into_iter().skip(1).next();
     let name;
@@ -140,5 +148,5 @@ fn mixin_expand_impl(input: TokenStream) -> Result<TokenStream, Error> {
     let mixin = data.get_mut(&name).ok_or_else(|| Error::NoMixin(name))?;
     mixin.extensions.push(code);
     // Drops the original impl
-    Ok(TokenStream::new())
+    Ok(output)
 }

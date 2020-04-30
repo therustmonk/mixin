@@ -1,22 +1,20 @@
 #![feature(proc_macro_hygiene)]
 
-use mixin::{mixin, mixin_declare, mixin_expand};
-
 #[test]
 fn test_base_case() {
-    #[mixin_declare]
+    #[mixin::declare]
     pub struct Themeable {
         theme: bool,
     }
 
-    #[mixin_expand]
+    #[mixin::expand]
     impl Themeable {
         pub fn has_theme(&self) -> bool {
             self.theme
         }
     }
 
-    #[mixin(Themeable)]
+    #[mixin::insert(Themeable)]
     pub struct MyStruct {}
 
     let my_struct = MyStruct { theme: true };
@@ -25,10 +23,10 @@ fn test_base_case() {
 
 #[test]
 fn test_empty_vase() {
-    #[mixin_declare]
+    #[mixin::declare]
     pub struct Themeable {}
 
-    #[mixin(Themeable)]
+    #[mixin::insert(Themeable)]
     pub struct MyStruct {}
 
     MyStruct {};
@@ -36,10 +34,10 @@ fn test_empty_vase() {
 
 #[test]
 fn test_own_fields() {
-    #[mixin_declare]
+    #[mixin::declare]
     pub struct Themeable {}
 
-    #[mixin(Themeable)]
+    #[mixin::insert(Themeable)]
     pub struct MyStruct {
         _own: u8,
     }
@@ -49,12 +47,12 @@ fn test_own_fields() {
 
 #[test]
 fn test_can_derive() {
-    #[mixin_declare]
+    #[mixin::declare]
     pub struct Value {
         value: u8,
     }
 
-    #[mixin(Value)]
+    #[mixin::insert(Value)]
     #[derive(Debug, Clone)]
     pub struct MyStruct {}
 
@@ -64,12 +62,12 @@ fn test_can_derive() {
 
 #[test]
 fn test_fields_not_corrupted() {
-    #[mixin_declare]
+    #[mixin::declare]
     pub struct Value {
         value: u8,
     }
 
-    #[mixin(Value)]
+    #[mixin::insert(Value)]
     #[derive(Debug, Clone)]
     pub struct MyStruct {
         own_value: u8,
@@ -84,31 +82,31 @@ fn test_fields_not_corrupted() {
 
 #[test]
 fn test_multiple() {
-    #[mixin_declare]
+    #[mixin::declare]
     pub struct Themeable {
         theme: bool,
     }
 
-    #[mixin_expand]
+    #[mixin::expand]
     impl Themeable {
         pub fn has_theme(&self) -> bool {
             self.theme
         }
     }
 
-    #[mixin_declare]
+    #[mixin::declare]
     pub struct Worker {
         working: bool,
     }
 
-    #[mixin_expand]
+    #[mixin::expand]
     impl Worker {
         pub fn is_working(&self) -> bool {
             self.working
         }
     }
 
-    #[mixin(Themeable, Worker)]
+    #[mixin::insert(Themeable, Worker)]
     pub struct MyStruct {}
 
     let my_struct = MyStruct {
