@@ -5,21 +5,19 @@ This crate contains `mixin` macros that combines fields and implementations of d
 Example:
 
 ```rust
-use mixin::{mixin, mixin_declare, mixin_expand};
-
-#[mixin_declare]
+#[mixin::declare]
 pub struct Named {
     name: String,
 }
 
-#[mixin_expand]
+#[mixin::expand]
 impl Named {
     pub fn name(&self) -> &str {
         &self.name
     }
 }
 
-#[mixin(Named)]
+#[mixin::insert(Named)]
 pub struct MyStruct {}
 
 #[test]
