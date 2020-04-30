@@ -139,5 +139,6 @@ fn mixin_expand_impl(input: TokenStream) -> Result<TokenStream, Error> {
     let mut data = GLOBAL_DATA.lock().map_err(|_| Error::GlobalUnavailable)?;
     let mixin = data.get_mut(&name).ok_or_else(|| Error::NoMixin(name))?;
     mixin.extensions.push(code);
+    // Drops the original impl
     Ok(TokenStream::new())
 }
