@@ -3,6 +3,27 @@
 use mixin::{mixin, mixin_declare, mixin_expand};
 
 #[test]
+fn test_base_case() {
+    #[mixin_declare]
+    pub struct Themeable {
+        theme: bool,
+    }
+
+    #[mixin_expand]
+    impl Themeable {
+        pub fn has_theme(&self) -> bool {
+            self.theme
+        }
+    }
+
+    #[mixin(Themeable)]
+    pub struct MyStruct {}
+
+    let my_struct = MyStruct { theme: true };
+    assert_eq!(my_struct.has_theme(), true);
+}
+
+#[test]
 fn test_empty_vase() {
     #[mixin_declare]
     pub struct Themeable {}
@@ -59,27 +80,6 @@ fn test_fields_not_corrupted() {
         own_value: 2,
     };
     format!("{:?}", my_struct.clone());
-}
-
-#[test]
-fn test_base_case() {
-    #[mixin_declare]
-    pub struct Themeable {
-        theme: bool,
-    }
-
-    #[mixin_expand]
-    impl Themeable {
-        pub fn has_theme(&self) -> bool {
-            self.theme
-        }
-    }
-
-    #[mixin(Themeable)]
-    pub struct MyStruct {}
-
-    let my_struct = MyStruct { theme: true };
-    assert_eq!(my_struct.has_theme(), true);
 }
 
 #[test]
