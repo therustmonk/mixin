@@ -1,23 +1,20 @@
 use once_cell::sync::Lazy;
 use proc_macro::{TokenStream, TokenTree};
-use quote::quote;
+use proc_macro2::Span;
+use quote::ToTokens;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use syn::parse_macro_input::ParseMacroInput;
-use syn::{
-    parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, AttributeArgs, Data,
-    DeriveInput, Field, Fields, Meta, NestedMeta,
-};
+use syn::{parse_macro_input, AttributeArgs, Data, DeriveInput, Fields, Meta, NestedMeta};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 enum Error {
     #[error("global data unavailable")]
     GlobalUnavailable,
-    #[error("token stream has been depleted")]
-    StreamDepleted,
     #[error("can't find mixin with name: {0}")]
     NoMixin(String),
+    #[error("invalid expansion of the mixin")]
+    InvalidExpansion,
     #[error("syn error: {0}")]
     SynError(#[from] syn::Error),
     #[error("lex error: {0}")]
@@ -26,22 +23,9 @@ enum Error {
 
 impl Error {
     fn to_compile_error(self) -> TokenStream {
-        todo!()
-    }
-}
-
-fn rec_printer(stream: TokenStream) {
-    for tt in stream.into_iter() {
-        match tt {
-            TokenTree::Group(group) => {
-                println!("GROUP");
-                rec_printer(group.stream());
-                println!("END GROUP");
-            }
-            _ => {
-                println!("USE {:?}", tt);
-            }
-        }
+        let txt = self.to_string();
+        let err = syn::Error::new(Span::call_site(), txt).to_compile_error();
+        TokenStream::from(err)
     }
 }
 
@@ -52,6 +36,10 @@ pub fn mixin(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 fn mixin_impl(args: AttributeArgs, input: TokenStream) -> Result<TokenStream, Error> {
+    let mut the_struct: DeriveInput = syn::parse(input)?;
+    let the_struct_name = the_struct.ident.to_string();
+
+    // Get names of mixins to append
     let mut mixin_names = HashSet::new();
     for nested_meta in args {
         if let NestedMeta::Meta(meta) = nested_meta {
@@ -62,63 +50,94 @@ fn mixin_impl(args: AttributeArgs, input: TokenStream) -> Result<TokenStream, Er
             }
         }
     }
+
     let data = GLOBAL_DATA.lock().map_err(|_| Error::GlobalUnavailable)?;
-    let mut punctuated = None;
+    let mut mixed_fields = Vec::new();
+    let mut mixed_impls = Vec::new();
     for mixin_name in mixin_names {
-        let mixin_source = data
+        let mixin = data
             .get(&mixin_name)
-            .ok_or_else(|| Error::NoMixin(mixin_name))?;
-        let input: TokenStream = mixin_source.parse()?;
+            .ok_or_else(|| Error::NoMixin(mixin_name.clone()))?;
+        let input: TokenStream = mixin.declaration.parse()?;
         let the_mixin: DeriveInput = syn::parse(input)?;
         if let Data::Struct(st) = the_mixin.data {
             if let Fields::Named(named) = st.fields {
-                //let punctuated: Punctuated<Field, Comma> = named.named;
-                punctuated = Some(named.named);
+                mixed_fields.push(named.named);
             }
+        }
+        for extension in &mixin.extensions {
+            let source = extension.replace(&mixin_name, &the_struct_name);
+            let stream: TokenStream = source.parse()?;
+            mixed_impls.push(stream);
         }
     }
 
-    let mut the_struct: DeriveInput = syn::parse(input)?;
     if let Data::Struct(ref mut st) = the_struct.data {
         if let Fields::Named(ref mut named) = st.fields {
-            if let Some(punc) = punctuated {
-                named.named.extend(punc.into_pairs());
+            for fields in mixed_fields {
+                named.named.extend(fields.into_pairs());
             }
         }
     }
 
-    let output = quote! {
-        #the_struct
-    };
-
-    //println!("DATA: {}", output.to_string());
-
-    Ok(TokenStream::from(output))
+    let mut stream = TokenStream::from(the_struct.into_token_stream());
+    for impls in mixed_impls {
+        stream.extend(impls);
+    }
+    Ok(stream)
 }
 
-static GLOBAL_DATA: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+struct Mixin {
+    declaration: String,
+    extensions: Vec<String>,
+}
+
+impl Mixin {
+    fn from(input: &TokenStream) -> Self {
+        Self {
+            declaration: input.to_string(),
+            extensions: Vec::new(),
+        }
+    }
+}
+
+static GLOBAL_DATA: Lazy<Mutex<HashMap<String, Mixin>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[proc_macro_attribute]
-pub fn mixin_new(attribute: TokenStream, input: TokenStream) -> TokenStream {
-    mixin_new_impl(attribute, input).unwrap_or_else(Error::to_compile_error)
+pub fn mixin_declare(_attribute: TokenStream, input: TokenStream) -> TokenStream {
+    mixin_declare_impl(input).unwrap_or_else(Error::to_compile_error)
 }
 
-fn mixin_new_impl(attribute: TokenStream, input: TokenStream) -> Result<TokenStream, Error> {
+fn mixin_declare_impl(input: TokenStream) -> Result<TokenStream, Error> {
     // Consume the struct
-    let s = input.to_string();
+    let mixin = Mixin::from(&input);
     let input: DeriveInput = syn::parse(input).unwrap();
     let name = input.ident.to_string();
     let mut data = GLOBAL_DATA.lock().map_err(|_| Error::GlobalUnavailable)?;
-    data.insert(name, s);
+    data.insert(name, mixin);
     // And give the empty output back
     Ok(TokenStream::new())
 }
 
-/*
-    let input = parse_macro_input!(input as DeriveInput);
-    if let Data::Struct(st) = input.data {
-        if let Fields::Named(named) = st.fields {
-            let punctuated: Punctuated<Field, Comma> = named.named;
+#[proc_macro_attribute]
+pub fn mixin_expand(_attribute: TokenStream, input: TokenStream) -> TokenStream {
+    mixin_expand_impl(input).unwrap_or_else(Error::to_compile_error)
+}
+
+fn mixin_expand_impl(input: TokenStream) -> Result<TokenStream, Error> {
+    let code = input.to_string();
+    let ident = input.into_iter().skip(1).next();
+    let name;
+    match ident {
+        Some(TokenTree::Ident(ident)) => {
+            name = ident.to_string();
+        }
+        _ => {
+            return Err(Error::InvalidExpansion);
         }
     }
-*/
+    let mut data = GLOBAL_DATA.lock().map_err(|_| Error::GlobalUnavailable)?;
+    let mixin = data.get_mut(&name).ok_or_else(|| Error::NoMixin(name))?;
+    mixin.extensions.push(code);
+    Ok(TokenStream::new())
+}
