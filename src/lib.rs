@@ -4,8 +4,12 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use syn::{parse_macro_input, AttributeArgs, Data, DeriveInput, Fields, Meta, NestedMeta};
+use syn::{
+    parse_macro_input, spanned::Spanned, AttributeArgs, Data, DeriveInput, Fields, Meta, NestedMeta,
+};
 use thiserror::Error;
+
+const INVALID_MIXIN_SPEC: &str = "Not a valid mixin specifier";
 
 #[derive(Error, Debug)]
 enum Error {
@@ -24,6 +28,9 @@ enum Error {
 impl Error {
     fn to_compile_error(self) -> TokenStream {
         let txt = self.to_string();
+        if let Error::SynError(e) = self {
+            return TokenStream::from(e.to_compile_error());
+        }
         let err = syn::Error::new(Span::call_site(), txt).to_compile_error();
         TokenStream::from(err)
     }
@@ -44,10 +51,26 @@ fn insert_impl(args: AttributeArgs, input: TokenStream) -> Result<TokenStream, E
     for nested_meta in args {
         if let NestedMeta::Meta(meta) = nested_meta {
             if let Meta::Path(path) = meta {
-                for path_segment in path.segments.iter() {
-                    mixin_names.insert(path_segment.ident.to_string());
+                let segments = path.segments;
+                if segments.len() != 1 {
+                    return Err(Error::SynError(syn::Error::new_spanned(
+                        segments,
+                        INVALID_MIXIN_SPEC,
+                    )));
                 }
+                let segment = segments.first().unwrap();
+                mixin_names.insert(segment.ident.to_string());
+            } else {
+                return Err(Error::SynError(syn::Error::new_spanned(
+                    meta,
+                    INVALID_MIXIN_SPEC,
+                )));
             }
+        } else {
+            return Err(Error::SynError(syn::Error::new_spanned(
+                nested_meta,
+                INVALID_MIXIN_SPEC,
+            )));
         }
     }
 
