@@ -4,8 +4,22 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use syn::{parse_macro_input, AttributeArgs, Data, DeriveInput, Fields, Meta, NestedMeta};
+use syn::parse::{Parse, ParseStream, Result as SynResult};
+use syn::{parse_macro_input, punctuated::Punctuated, Data, DeriveInput, Fields, Ident, Token};
 use thiserror::Error;
+
+struct PunctuatedArgs {
+    idents: HashSet<Ident>,
+}
+
+impl Parse for PunctuatedArgs {
+    fn parse(input: ParseStream) -> SynResult<Self> {
+        let vars = Punctuated::<Ident, Token![,]>::parse_separated_nonempty(input)?;
+        Ok(PunctuatedArgs {
+            idents: vars.into_iter().collect(),
+        })
+    }
+}
 
 #[derive(Error, Debug)]
 enum Error {
@@ -31,24 +45,18 @@ impl Error {
 
 #[proc_macro_attribute]
 pub fn insert(args: TokenStream, input: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(args as AttributeArgs);
+    let args = parse_macro_input!(args as PunctuatedArgs);
     insert_impl(args, input).unwrap_or_else(Error::to_compile_error)
 }
 
-fn insert_impl(args: AttributeArgs, input: TokenStream) -> Result<TokenStream, Error> {
-    let mut the_struct: DeriveInput = syn::parse(input)?;
+fn insert_impl(args: PunctuatedArgs, input: TokenStream) -> Result<TokenStream, Error> {
+    let mut the_struct: DeriveInput = syn::parse(input).expect("Failed to parse input");
     let the_struct_name = the_struct.ident.to_string();
 
     // Get names of mixins to append
-    let mut mixin_names = HashSet::new();
-    for nested_meta in args {
-        if let NestedMeta::Meta(meta) = nested_meta {
-            if let Meta::Path(path) = meta {
-                for path_segment in path.segments.iter() {
-                    mixin_names.insert(path_segment.ident.to_string());
-                }
-            }
-        }
+    let mut mixin_names: HashSet<String> = HashSet::new();
+    for arg in args.idents.iter() {
+        mixin_names.insert(arg.to_string());
     }
 
     let data = GLOBAL_DATA.lock().map_err(|_| Error::GlobalUnavailable)?;
